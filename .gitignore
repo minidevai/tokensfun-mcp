@@ -1,0 +1,4 @@
+node_modules/
+minidev/config.json
+.env
+.env.local
