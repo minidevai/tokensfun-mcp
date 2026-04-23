@@ -59,6 +59,18 @@ Compatible JSON shape:
 }
 ```
 
+If you prefer a local interactive wizard, run:
+
+```bash
+npx -y tokensfun-mcp --setup
+```
+
+The wizard stores these 3 main values in `~/.tokensfun-mcp/config.json`:
+
+- `MINIDEV_API_KEY`
+- `MINIDEV_CREATOR_WALLET`
+- `MINIDEV_CREATOR_EMAIL`
+
 ## Claude Code MCP Example
 
 Point Claude Code at the absolute path to `server.js`:
@@ -89,12 +101,14 @@ Run from the `claude-code-mcp/` directory:
 
 ```bash
 npm test
+npm run setup
 npm run tools
 npm start
 ```
 
 `npm run tools` prints the exact tool metadata exposed by `tokensfun mcp`.
 `npm start` runs the stdio MCP server and waits for a client connection.
+It is not hanging when it stays open there; that is the normal Claude Code / MCP server behavior.
 
 ## Recommended Agent Flow
 

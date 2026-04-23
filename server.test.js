@@ -7,13 +7,16 @@ const os = require("node:os");
 
 const {
   callTool,
+  createSetupConfig,
   createToolDefinitions,
   deployExistingAppToken,
+  getStartupBanner,
   getConfigStatus,
   handleRpcRequest,
   healthCheck,
   inspectProject,
   listProjects,
+  printHelp,
   prepareExistingAppToken,
   showCreatorIdentity,
   startServer,
@@ -682,6 +685,49 @@ test("protocol smoke test covers initialize, tools/list, and legacy plus tokensf
   assert.match(wirePayload, /"id":99/);
 });
 
+test("setup helpers build config, help output, and startup banner for Claude Code usage", async () => {
+  assert.deepEqual(
+    createSetupConfig({
+      apiKey: " mk_test ",
+      creatorWallet: " 0x1234567890123456789012345678901234567890 ",
+      creatorEmail: " hello@example.com "
+    }),
+    {
+      apiKey: "mk_test",
+      creatorWallet: "0x1234567890123456789012345678901234567890",
+      creatorEmail: "hello@example.com"
+    }
+  );
+
+  assert.deepEqual(
+    createSetupConfig({
+      apiKey: "mk_test",
+      creatorWallet: "0x1234567890123456789012345678901234567890",
+      creatorEmail: ""
+    }),
+    {
+      apiKey: "mk_test",
+      creatorWallet: "0x1234567890123456789012345678901234567890"
+    }
+  );
+
+  const helpChunks = [];
+  printHelp({
+    write(chunk) {
+      helpChunks.push(String(chunk));
+    }
+  });
+  const helpText = helpChunks.join("");
+  assert.match(helpText, /--setup/);
+  assert.match(helpText, /MINIDEV_API_KEY/);
+  assert.match(helpText, /MINIDEV_CREATOR_WALLET/);
+  assert.match(helpText, /MINIDEV_CREATOR_EMAIL/);
+
+  const banner = getStartupBanner();
+  assert.match(banner, /Claude Code/i);
+  assert.match(banner, /--setup/);
+});
+
 test("startServer announces stdio mode and emits parse errors on invalid JSON frames", async () => {
   const input = new EventEmitter();
   const stdoutChunks = [];
@@ -704,7 +750,10 @@ test("startServer announces stdio mode and emits parse errors on invalid JSON fr
     }
   );
 
-  assert.match(stderrChunks.join(""), /listening on stdio for MCP requests/i);
+  const banner = stderrChunks.join("");
+  assert.match(banner, /listening on stdio for MCP requests/i);
+  assert.match(banner, /This is normal/i);
+  assert.match(banner, /--setup/);
 
   input.emit("data", Buffer.from("Content-Length: 3\r\n\r\nbad", "utf8"));
   await new Promise((resolve) => setImmediate(resolve));

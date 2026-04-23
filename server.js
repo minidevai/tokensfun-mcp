@@ -1431,12 +1431,20 @@ function writeRpcMessage(stream, message) {
   stream.write(body);
 }
 
+function getStartupBanner() {
+  return [
+    `${SERVER_NAME} v${SERVER_VERSION} listening on stdio for MCP requests`,
+    "This is normal: the process stays open until Claude Code or another MCP client connects.",
+    "Run `npx -y tokensfun-mcp --setup` to launch the setup wizard."
+  ].join("\n") + "\n";
+}
+
 function startServer(context = {}, streams = {}) {
   const input = streams.input || process.stdin;
   const output = streams.output || process.stdout;
   const error = streams.error || process.stderr;
 
-  error.write(`${SERVER_NAME} v${SERVER_VERSION} listening on stdio for MCP requests\n`);
+  error.write(getStartupBanner());
 
   let buffer = Buffer.alloc(0);
   input.on("data", async (chunk) => {
@@ -1490,48 +1498,143 @@ function printTools() {
   process.stdout.write(`${JSON.stringify(createToolDefinitions(), null, 2)}\n`);
 }
 
-async function runSetup() {
+function printHelp(stream = process.stdout) {
+  stream.write(
+    [
+      `${SERVER_NAME} v${SERVER_VERSION}`,
+      "",
+      "Usage:",
+      "  tokensfun-mcp                Start the stdio MCP server",
+      "  tokensfun-mcp --setup        Run the interactive setup wizard",
+      "  tokensfun-mcp --tools        Print exposed MCP tools as JSON",
+      "  tokensfun-mcp --help         Show this help message",
+      "",
+      "Setup wizard fields:",
+      "  MINIDEV_API_KEY",
+      "  MINIDEV_CREATOR_WALLET",
+      "  MINIDEV_CREATOR_EMAIL",
+      "",
+      "Defaults:",
+      `  MINIDEV_API_URL=${DEFAULT_API_URL}`,
+      `  TOKENS_FUN_URL=${DEFAULT_TOKENS_FUN_URL}`
+    ].join("\n") + "\n"
+  );
+}
+
+function createSetupConfig({ apiKey, creatorWallet, creatorEmail }) {
+  const config = {
+    apiKey: apiKey.trim(),
+    creatorWallet: creatorWallet.trim()
+  };
+  if (creatorEmail.trim()) {
+    config.creatorEmail = creatorEmail.trim();
+  }
+  return config;
+}
+
+function maskApiKey(apiKey) {
+  if (!apiKey) {
+    return "";
+  }
+  const trimmed = apiKey.trim();
+  if (trimmed.length <= 8) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, 4)}...${trimmed.slice(-4)}`;
+}
+
+function isValidEmail(value) {
+  return !value || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+async function promptRequired(ask, prompt, validate, errorMessage, defaultValue = "", errorStream = process.stderr) {
+  while (true) {
+    const value = (await ask(prompt)).trim() || defaultValue;
+    if (validate(value)) {
+      return value;
+    }
+    errorStream.write(`${errorMessage}\n`);
+  }
+}
+
+async function promptOptional(ask, prompt, validate, errorMessage, defaultValue = "", errorStream = process.stderr) {
+  while (true) {
+    const raw = (await ask(prompt)).trim();
+    const value = raw || defaultValue;
+    if (validate(value)) {
+      return value;
+    }
+    errorStream.write(`${errorMessage}\n`);
+  }
+}
+
+async function runSetup(options = {}) {
   const readline = require("node:readline");
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const input = options.input || process.stdin;
+  const output = options.output || process.stdout;
+  const error = options.error || process.stderr;
+  const homeDir = options.homeDir || os.homedir();
+  const configDir = path.join(homeDir, ".tokensfun-mcp");
+  const configPath = path.join(configDir, "config.json");
+  const existingConfig = (await readJsonIfExists(configPath)) || {};
+  const rl = readline.createInterface({ input, output });
   const ask = (question) => new Promise((resolve) => rl.question(question, resolve));
 
-  const write = (text) => process.stdout.write(text);
+  const write = (text) => output.write(text);
 
-  write("\ntokensfun-mcp setup\n");
-  write("===================\n");
+  write(`\n${SERVER_NAME} setup wizard\n`);
+  write("===========================\n");
+  write("This wizard stores your 3 main credentials in ~/.tokensfun-mcp/config.json\n");
   write("Get your API key at: https://tokens.fun/ → connect wallet → Skills → Generate API Key\n\n");
 
-  const apiKey = (await ask("MiniDev API key: ")).trim();
-  if (!apiKey) {
-    rl.close();
-    process.stderr.write("Error: API key is required.\n");
-    process.exit(1);
-  }
+  const apiKey = await promptRequired(
+    ask,
+    existingConfig.apiKey
+      ? `1. MiniDev API key [press Enter to keep ${maskApiKey(existingConfig.apiKey)}]: `
+      : "1. MiniDev API key: ",
+    (value) => Boolean(value),
+    "Error: API key is required.",
+    existingConfig.apiKey || "",
+    error
+  );
 
-  const wallet = (await ask("Creator wallet address (0x...): ")).trim();
-  if (!/^0x[a-fA-F0-9]{40}$/.test(wallet)) {
-    rl.close();
-    process.stderr.write("Error: Invalid Ethereum wallet address.\n");
-    process.exit(1);
-  }
+  const creatorWallet = await promptRequired(
+    ask,
+    existingConfig.creatorWallet
+      ? `2. Creator wallet address (0x...) [${existingConfig.creatorWallet}]: `
+      : "2. Creator wallet address (0x...): ",
+    (value) => /^0x[a-fA-F0-9]{40}$/.test(value),
+    "Error: Invalid Ethereum wallet address.",
+    existingConfig.creatorWallet || "",
+    error
+  );
 
-  const email = (await ask("Creator email (optional, press Enter to skip): ")).trim();
+  const creatorEmail = await promptOptional(
+    ask,
+    existingConfig.creatorEmail
+      ? `3. Creator email (optional) [${existingConfig.creatorEmail}]: `
+      : "3. Creator email (optional, press Enter to skip): ",
+    isValidEmail,
+    "Error: Invalid email address.",
+    existingConfig.creatorEmail || "",
+    error
+  );
 
   rl.close();
 
-  const config = { apiKey, creatorWallet: wallet };
-  if (email) config.creatorEmail = email;
-
-  const configDir = path.join(os.homedir(), ".tokensfun-mcp");
-  const configPath = path.join(configDir, "config.json");
+  const config = createSetupConfig({ apiKey, creatorWallet, creatorEmail });
 
   await fsp.mkdir(configDir, { recursive: true });
   await fsp.writeFile(configPath, JSON.stringify(config, null, 2), "utf8");
 
   write(`\nConfig saved to ${configPath}\n\n`);
+  write("Configured values:\n");
+  write(`  MINIDEV_API_KEY=${maskApiKey(config.apiKey)}\n`);
+  write(`  MINIDEV_CREATOR_WALLET=${config.creatorWallet}\n`);
+  write(`  MINIDEV_CREATOR_EMAIL=${config.creatorEmail || "(not set)"}\n\n`);
   write("Add to Claude Code (run this once):\n");
   write("  claude mcp add tokensfun -- npx -y tokensfun-mcp\n\n");
-  write("Done! Restart Claude Code and start using the tokensfun tools.\n\n");
+  write("You can now restart Claude Code and call tokensfun_health_check first.\n\n");
 }
 
 if (require.main === module) {
@@ -1539,10 +1642,12 @@ if (require.main === module) {
   const ctx = { configOptions: { cwd: process.cwd(), serverDir: __dirname } };
   if (arg === "--setup") {
     runSetup().catch((err) => { process.stderr.write(`${err.message}\n`); process.exit(1); });
+  } else if (arg === "--help" || arg === "-h") {
+    printHelp();
   } else if (arg === "--tools") {
     printTools();
   } else if (arg && arg.startsWith("--")) {
-    process.stderr.write(`Unknown flag: ${arg}\nSupported flags: --setup, --tools\n`);
+    process.stderr.write(`Unknown flag: ${arg}\nSupported flags: --setup, --tools, --help\n`);
     process.exit(1);
   } else {
     startServer(ctx);
@@ -1556,7 +1661,10 @@ module.exports = {
   callTool,
   tokenizeApp,
   startServer,
+  getStartupBanner,
+  printHelp,
   runSetup,
+  createSetupConfig,
   canonicalizeToolName,
   checkCredits,
   createToolDefinitions,
@@ -1575,7 +1683,6 @@ module.exports = {
   prepareExistingAppToken,
   resolveConfig,
   showCreatorIdentity,
-  startServer,
   toToolErrorResult,
   toToolResult,
   uploadImage,
