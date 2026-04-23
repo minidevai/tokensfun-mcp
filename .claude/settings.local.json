@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(PORT=3001 node server.js)",
+      "Bash(curl -s http://localhost:3001/health)",
+      "Bash(kill %1)"
+    ]
+  }
+}

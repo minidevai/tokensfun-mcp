@@ -14,6 +14,7 @@
   },
   "scripts": {
     "start": "node server.js",
+    "start:http": "node server.js --http",
     "tools": "node server.js --tools",
     "test": "node server.test.js"
   },

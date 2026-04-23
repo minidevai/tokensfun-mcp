@@ -1515,17 +1515,89 @@ function printTools() {
   process.stdout.write(`${JSON.stringify(createToolDefinitions(), null, 2)}\n`);
 }
 
+function startHttpServer(context = {}) {
+  const http = require("node:http");
+  const port = parseInt(process.env.PORT || "3000", 10);
+  const sessions = new Map();
+
+  const server = http.createServer(async (req, res) => {
+    const url = new URL(req.url, `http://localhost:${port}`);
+
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+    if (req.method === "OPTIONS") {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/health") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ status: "ok", server: SERVER_NAME, version: SERVER_VERSION }));
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/sse") {
+      const sessionId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no"
+      });
+      sessions.set(sessionId, res);
+      res.write(`event: endpoint\ndata: /message?sessionId=${sessionId}\n\n`);
+      req.on("close", () => sessions.delete(sessionId));
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/message") {
+      const sessionId = url.searchParams.get("sessionId");
+      const sseRes = sessions.get(sessionId);
+      if (!sseRes) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Session not found or expired." }));
+        return;
+      }
+      let body = "";
+      req.on("data", (chunk) => { body += chunk; });
+      req.on("end", async () => {
+        try {
+          const message = JSON.parse(body);
+          const response = await handleRpcRequest(message, context);
+          if (response) {
+            sseRes.write(`event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", ...response })}\n\n`);
+          }
+          res.writeHead(202);
+          res.end();
+        } catch (error) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: error.message || "Bad request" }));
+        }
+      });
+      return;
+    }
+
+    res.writeHead(404);
+    res.end();
+  });
+
+  server.listen(port, () => {
+    process.stderr.write(`${SERVER_NAME} v${SERVER_VERSION} HTTP/SSE server listening on port ${port}\n`);
+  });
+}
+
 if (require.main === module) {
   const arg = process.argv[2];
+  const ctx = { configOptions: { cwd: process.cwd(), serverDir: __dirname } };
   if (arg === "--tools") {
     printTools();
+  } else if (arg === "--http" || process.env.PORT) {
+    startHttpServer(ctx);
   } else {
-    startServer({
-      configOptions: {
-        cwd: process.cwd(),
-        serverDir: __dirname
-      }
-    });
+    startServer(ctx);
   }
 }
 
@@ -1535,6 +1607,7 @@ module.exports = {
   ToolInputError,
   callTool,
   tokenizeApp,
+  startHttpServer,
   canonicalizeToolName,
   checkCredits,
   createToolDefinitions,
