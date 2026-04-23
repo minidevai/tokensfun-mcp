@@ -2,6 +2,12 @@
   "name": "tokensfun-mcp",
   "version": "1.0.0",
   "files": ["server.js", "README.md", "SKILL.md"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/minidevai/tokensfun-mcp.git"
+  },
+  "homepage": "https://tokens.fun",
+  "keywords": ["mcp", "tokens", "tokensfun", "claude", "web3", "base"],
   "description": "tokensfun mcp for Claude Code existing-app token deployment.",
   "bin": {
     "tokensfun-mcp": "./server.js"
