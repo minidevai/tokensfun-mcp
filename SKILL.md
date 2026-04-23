@@ -13,12 +13,25 @@ Deploy a token for the current project on tokens.fun using one MCP call.
 
 ## Prerequisites (tell the user upfront if missing)
 
-The `tokensfun` MCP must be configured with:
-- `MINIDEV_API_KEY` — go to https://tokens.fun/ → connect wallet → click Skills → Generate API Key
-- `MINIDEV_CREATOR_WALLET` — your Ethereum wallet address (0x...)
-- `MINIDEV_CREATOR_EMAIL` — optional but recommended
+If the `tokensfun` MCP is not yet configured, tell the user to run this **one-time setup**:
 
-These go in the MCP `env` block in `claude_desktop_config.json` / `.claude/settings.json`, or in `minidev/config.json` in the project.
+```bash
+npx tokensfun-mcp --setup
+```
+
+This will interactively ask for:
+- **API key** — get it at https://tokens.fun/ → connect wallet → Skills → Generate API Key
+- **Creator wallet** — their Ethereum address (0x...)
+- **Creator email** — optional but recommended
+
+Config is saved to `~/.tokensfun-mcp/config.json` automatically.
+
+Then add the MCP to Claude Code:
+```bash
+claude mcp add tokensfun -- npx -y tokensfun-mcp
+```
+
+No env vars needed after setup.
 
 ## Flow
 

@@ -1,6 +1,6 @@
 {
   "name": "tokensfun-mcp",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "files": ["server.js", "README.md", "SKILL.md"],
   "repository": {
     "type": "git",
@@ -15,6 +15,7 @@
   "scripts": {
     "start": "node server.js",
     "start:http": "node server.js --http",
+    "setup": "node server.js --setup",
     "tools": "node server.js --tools",
     "test": "node server.test.js"
   },

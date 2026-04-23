@@ -6,7 +6,7 @@ const os = require("node:os");
 const path = require("node:path");
 
 const SERVER_NAME = "tokensfun-mcp";
-const SERVER_VERSION = "1.1.0";
+const SERVER_VERSION = require("./package.json").version;
 const DEFAULT_API_URL = "https://app.minidev.fun";
 const DEFAULT_TOKENS_FUN_URL = "https://tokens.fun";
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -641,6 +641,7 @@ async function resolveConfig(options = {}) {
   const configCandidates = [
     path.join(cwd, "minidev", "config.json"),
     path.join(repoRoot, "minidev", "config.json"),
+    path.join(homeDir, ".tokensfun-mcp", "config.json"),
     path.join(homeDir, ".clawdbot", "skills", "minidev", "config.json")
   ];
 
@@ -1515,6 +1516,50 @@ function printTools() {
   process.stdout.write(`${JSON.stringify(createToolDefinitions(), null, 2)}\n`);
 }
 
+async function runSetup() {
+  const readline = require("node:readline");
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const ask = (question) => new Promise((resolve) => rl.question(question, resolve));
+
+  const write = (text) => process.stdout.write(text);
+
+  write("\ntokensfun-mcp setup\n");
+  write("===================\n");
+  write("Get your API key at: https://tokens.fun/ → connect wallet → Skills → Generate API Key\n\n");
+
+  const apiKey = (await ask("MiniDev API key: ")).trim();
+  if (!apiKey) {
+    rl.close();
+    process.stderr.write("Error: API key is required.\n");
+    process.exit(1);
+  }
+
+  const wallet = (await ask("Creator wallet address (0x...): ")).trim();
+  if (!/^0x[a-fA-F0-9]{40}$/.test(wallet)) {
+    rl.close();
+    process.stderr.write("Error: Invalid Ethereum wallet address.\n");
+    process.exit(1);
+  }
+
+  const email = (await ask("Creator email (optional, press Enter to skip): ")).trim();
+
+  rl.close();
+
+  const config = { apiKey, creatorWallet: wallet };
+  if (email) config.creatorEmail = email;
+
+  const configDir = path.join(os.homedir(), ".tokensfun-mcp");
+  const configPath = path.join(configDir, "config.json");
+
+  await fsp.mkdir(configDir, { recursive: true });
+  await fsp.writeFile(configPath, JSON.stringify(config, null, 2), "utf8");
+
+  write(`\nConfig saved to ${configPath}\n\n`);
+  write("Add to Claude Code (run this once):\n");
+  write("  claude mcp add tokensfun -- npx -y tokensfun-mcp\n\n");
+  write("Done! Restart Claude Code and start using the tokensfun tools.\n\n");
+}
+
 function startHttpServer(context = {}) {
   const http = require("node:http");
   const port = parseInt(process.env.PORT || "3000", 10);
@@ -1592,7 +1637,9 @@ function startHttpServer(context = {}) {
 if (require.main === module) {
   const arg = process.argv[2];
   const ctx = { configOptions: { cwd: process.cwd(), serverDir: __dirname } };
-  if (arg === "--tools") {
+  if (arg === "--setup") {
+    runSetup().catch((err) => { process.stderr.write(`${err.message}\n`); process.exit(1); });
+  } else if (arg === "--tools") {
     printTools();
   } else if (arg === "--http" || process.env.PORT) {
     startHttpServer(ctx);
@@ -1608,6 +1655,7 @@ module.exports = {
   callTool,
   tokenizeApp,
   startHttpServer,
+  runSetup,
   canonicalizeToolName,
   checkCredits,
   createToolDefinitions,
