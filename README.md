@@ -94,6 +94,7 @@ npm start
 ```
 
 `npm run tools` prints the exact tool metadata exposed by `tokensfun mcp`.
+`npm start` runs the stdio MCP server and waits for a client connection.
 
 ## Recommended Agent Flow
 

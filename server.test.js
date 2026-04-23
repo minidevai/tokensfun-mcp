@@ -1,5 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { EventEmitter } = require("node:events");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const os = require("node:os");
@@ -15,6 +16,7 @@ const {
   listProjects,
   prepareExistingAppToken,
   showCreatorIdentity,
+  startServer,
   uploadImage,
   validateApiKeyConnection,
   validateExistingAppToken,
@@ -481,12 +483,15 @@ test("healthCheck reports mixed readiness states", async () => {
 });
 
 test("explain_missing_setup distinguishes deploy and upload actions", async () => {
+  const dir = await makeTempDir();
   const deploy = await callTool(
     "tokensfun_explain_missing_setup",
     { action: "deploy_existing_app_token" },
     {
       configOptions: {
-        env: {}
+        env: {},
+        cwd: dir,
+        homeDir: dir
       }
     }
   );
@@ -495,7 +500,9 @@ test("explain_missing_setup distinguishes deploy and upload actions", async () =
     { action: "upload_token_image" },
     {
       configOptions: {
-        env: {}
+        env: {},
+        cwd: dir,
+        homeDir: dir
       }
     }
   );
@@ -673,4 +680,36 @@ test("protocol smoke test covers initialize, tools/list, and legacy plus tokensf
   const wirePayload = Buffer.concat(chunks).toString("utf8");
   assert.match(wirePayload, /^Content-Length: \d+\r\n\r\n/);
   assert.match(wirePayload, /"id":99/);
+});
+
+test("startServer announces stdio mode and emits parse errors on invalid JSON frames", async () => {
+  const input = new EventEmitter();
+  const stdoutChunks = [];
+  const stderrChunks = [];
+
+  startServer(
+    {},
+    {
+      input,
+      output: {
+        write(chunk) {
+          stdoutChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, "utf8"));
+        }
+      },
+      error: {
+        write(chunk) {
+          stderrChunks.push(String(chunk));
+        }
+      }
+    }
+  );
+
+  assert.match(stderrChunks.join(""), /listening on stdio for MCP requests/i);
+
+  input.emit("data", Buffer.from("Content-Length: 3\r\n\r\nbad", "utf8"));
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const wirePayload = Buffer.concat(stdoutChunks).toString("utf8");
+  assert.match(wirePayload, /^Content-Length: \d+\r\n\r\n/);
+  assert.match(wirePayload, /"code":-32700/);
 });

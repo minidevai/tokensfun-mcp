@@ -25,7 +25,6 @@
   },
   "scripts": {
     "start": "node server.js",
-    "start:http": "node server.js --http",
     "setup": "node server.js --setup",
     "tools": "node server.js --tools",
     "test": "node server.test.js"

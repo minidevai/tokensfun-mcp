@@ -612,6 +612,17 @@ function sanitizeConfigSource(source) {
   return source.startsWith(homeDir) ? source.replace(homeDir, "~") : source;
 }
 
+function withConfigDefaults(config, source) {
+  return {
+    apiKey: config.apiKey || "",
+    apiUrl: config.apiUrl || DEFAULT_API_URL,
+    tokensFunUrl: config.tokensFunUrl || config.crystalsUrl || DEFAULT_TOKENS_FUN_URL,
+    creatorWallet: config.creatorWallet || "",
+    creatorEmail: config.creatorEmail || "",
+    source
+  };
+}
+
 async function resolveConfig(options = {}) {
   const env = options.env || process.env;
   const cwd = path.resolve(options.cwd || process.cwd());
@@ -628,14 +639,7 @@ async function resolveConfig(options = {}) {
   };
 
   if (envConfig.apiKey) {
-    return {
-      apiKey: envConfig.apiKey,
-      apiUrl: envConfig.apiUrl || DEFAULT_API_URL,
-      tokensFunUrl: envConfig.tokensFunUrl || DEFAULT_TOKENS_FUN_URL,
-      creatorWallet: envConfig.creatorWallet || "",
-      creatorEmail: envConfig.creatorEmail || "",
-      source: "env"
-    };
+    return withConfigDefaults(envConfig, "env");
   }
 
   const configCandidates = [
@@ -650,34 +654,10 @@ async function resolveConfig(options = {}) {
     if (!config) {
       continue;
     }
-    if (!config.apiKey) {
-      return {
-        apiKey: "",
-        apiUrl: config.apiUrl || DEFAULT_API_URL,
-        tokensFunUrl: config.tokensFunUrl || config.crystalsUrl || DEFAULT_TOKENS_FUN_URL,
-        creatorWallet: config.creatorWallet || "",
-        creatorEmail: config.creatorEmail || "",
-        source: filePath
-      };
-    }
-    return {
-      apiKey: config.apiKey,
-      apiUrl: config.apiUrl || DEFAULT_API_URL,
-      tokensFunUrl: config.tokensFunUrl || config.crystalsUrl || DEFAULT_TOKENS_FUN_URL,
-      creatorWallet: config.creatorWallet || "",
-      creatorEmail: config.creatorEmail || "",
-      source: filePath
-    };
+    return withConfigDefaults(config, filePath);
   }
 
-  return {
-    apiKey: "",
-    apiUrl: DEFAULT_API_URL,
-    tokensFunUrl: DEFAULT_TOKENS_FUN_URL,
-    creatorWallet: "",
-    creatorEmail: "",
-    source: "none"
-  };
+  return withConfigDefaults({}, "none");
 }
 
 async function loadConfig(options = {}) {
@@ -917,7 +897,6 @@ function buildSetupAdvice(action, configSummary) {
     missing.push("appUrl");
   }
   return {
-    action,
     missing,
     warnings: [...hints.warnings],
     recommendedNextSteps: [...hints.nextSteps]
@@ -1098,13 +1077,13 @@ async function normalizeExistingAppTokenInput(args, context = {}, options = {}) 
   }
 
   const validationChecks = [
-    [creatorWallet, () => validateWallet(creatorWallet), "creatorWallet"],
-    [appUrl, () => validatePublicUrl(appUrl, "appUrl"), "appUrl"],
-    [website, () => validatePublicUrl(website, "website"), "website"],
-    [input.imageUrl, () => validatePublicUrl(input.imageUrl, "imageUrl"), "imageUrl"],
-    [input.twitter, () => validatePublicUrl(input.twitter, "twitter"), "twitter"],
-    [input.telegram, () => validatePublicUrl(input.telegram, "telegram"), "telegram"],
-    [input.farcaster, () => validatePublicUrl(input.farcaster, "farcaster"), "farcaster"]
+    [creatorWallet, () => validateWallet(creatorWallet)],
+    [appUrl, () => validatePublicUrl(appUrl, "appUrl")],
+    [website, () => validatePublicUrl(website, "website")],
+    [input.imageUrl, () => validatePublicUrl(input.imageUrl, "imageUrl")],
+    [input.twitter, () => validatePublicUrl(input.twitter, "twitter")],
+    [input.telegram, () => validatePublicUrl(input.telegram, "telegram")],
+    [input.farcaster, () => validatePublicUrl(input.farcaster, "farcaster")]
   ];
 
   for (const [value, validator] of validationChecks) {
@@ -1330,7 +1309,6 @@ async function tokenizeApp(args, context = {}) {
   }
 
   const result = await deployExistingAppToken(input, context);
-  const config = await resolveConfig(context.configOptions);
 
   return {
     tokenAddress: result.tokenAddress,
@@ -1353,39 +1331,29 @@ async function tokenizeApp(args, context = {}) {
   };
 }
 
+const TOOL_HANDLERS = {
+  tokenize_app: (args, context) => tokenizeApp(args, context),
+  inspect_existing_app: (args, context) => inspectExistingAppTool(args, context),
+  upload_token_image: (args, context) => uploadImage(args, context),
+  deploy_existing_app_token: (args, context) => deployExistingAppToken(args, context),
+  check_credits: (_args, context) => checkCredits(context),
+  prepare_existing_app_token: (args, context) => prepareExistingAppToken(args, context),
+  validate_existing_app_token: (args, context) => validateExistingAppToken(args, context),
+  validate_vault: (args, context) => validateVaultTool(args, context),
+  get_config_status: (_args, context) => getConfigStatus(context),
+  show_creator_identity: (_args, context) => showCreatorIdentity(context),
+  validate_api_key_connection: (_args, context) => validateApiKeyConnection(context),
+  list_projects: (args, context) => listProjects(args, context),
+  health_check: (_args, context) => healthCheck(context),
+  explain_missing_setup: (args, context) => explainMissingSetup(args, context)
+};
+
 async function callTool(name, args, context = {}) {
-  switch (canonicalizeToolName(name)) {
-    case "tokenize_app":
-      return tokenizeApp(args, context);
-    case "inspect_existing_app":
-      return inspectExistingAppTool(args, context);
-    case "upload_token_image":
-      return uploadImage(args, context);
-    case "deploy_existing_app_token":
-      return deployExistingAppToken(args, context);
-    case "check_credits":
-      return checkCredits(context);
-    case "prepare_existing_app_token":
-      return prepareExistingAppToken(args, context);
-    case "validate_existing_app_token":
-      return validateExistingAppToken(args, context);
-    case "validate_vault":
-      return validateVaultTool(args, context);
-    case "get_config_status":
-      return getConfigStatus(context);
-    case "show_creator_identity":
-      return showCreatorIdentity(context);
-    case "validate_api_key_connection":
-      return validateApiKeyConnection(context);
-    case "list_projects":
-      return listProjects(args, context);
-    case "health_check":
-      return healthCheck(context);
-    case "explain_missing_setup":
-      return explainMissingSetup(args, context);
-    default:
-      throw new ToolInputError(`Unknown tool: ${name}`);
+  const handler = TOOL_HANDLERS[canonicalizeToolName(name)];
+  if (!handler) {
+    throw new ToolInputError(`Unknown tool: ${name}`);
   }
+  return handler(args, context);
 }
 
 async function handleRpcRequest(message, context = {}) {
@@ -1463,9 +1431,15 @@ function writeRpcMessage(stream, message) {
   stream.write(body);
 }
 
-function startServer(context = {}) {
+function startServer(context = {}, streams = {}) {
+  const input = streams.input || process.stdin;
+  const output = streams.output || process.stdout;
+  const error = streams.error || process.stderr;
+
+  error.write(`${SERVER_NAME} v${SERVER_VERSION} listening on stdio for MCP requests\n`);
+
   let buffer = Buffer.alloc(0);
-  process.stdin.on("data", async (chunk) => {
+  input.on("data", async (chunk) => {
     buffer = Buffer.concat([buffer, Buffer.from(chunk)]);
     while (true) {
       const separatorIndex = buffer.indexOf("\r\n\r\n");
@@ -1490,7 +1464,7 @@ function startServer(context = {}) {
       try {
         message = JSON.parse(jsonBody);
       } catch {
-        writeRpcMessage(process.stdout, {
+        writeRpcMessage(output, {
           jsonrpc: "2.0",
           id: null,
           error: {
@@ -1503,7 +1477,7 @@ function startServer(context = {}) {
 
       const response = await handleRpcRequest(message, context);
       if (response && Object.prototype.hasOwnProperty.call(message, "id")) {
-        writeRpcMessage(process.stdout, {
+        writeRpcMessage(output, {
           jsonrpc: "2.0",
           ...response
         });
@@ -1560,80 +1534,6 @@ async function runSetup() {
   write("Done! Restart Claude Code and start using the tokensfun tools.\n\n");
 }
 
-function startHttpServer(context = {}) {
-  const http = require("node:http");
-  const port = parseInt(process.env.PORT || "3000", 10);
-  const sessions = new Map();
-
-  const server = http.createServer(async (req, res) => {
-    const url = new URL(req.url, `http://localhost:${port}`);
-
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-
-    if (req.method === "OPTIONS") {
-      res.writeHead(204);
-      res.end();
-      return;
-    }
-
-    if (req.method === "GET" && url.pathname === "/health") {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ status: "ok", server: SERVER_NAME, version: SERVER_VERSION }));
-      return;
-    }
-
-    if (req.method === "GET" && url.pathname === "/sse") {
-      const sessionId = Math.random().toString(36).slice(2) + Date.now().toString(36);
-      res.writeHead(200, {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
-        "X-Accel-Buffering": "no"
-      });
-      sessions.set(sessionId, res);
-      res.write(`event: endpoint\ndata: /message?sessionId=${sessionId}\n\n`);
-      req.on("close", () => sessions.delete(sessionId));
-      return;
-    }
-
-    if (req.method === "POST" && url.pathname === "/message") {
-      const sessionId = url.searchParams.get("sessionId");
-      const sseRes = sessions.get(sessionId);
-      if (!sseRes) {
-        res.writeHead(400, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Session not found or expired." }));
-        return;
-      }
-      let body = "";
-      req.on("data", (chunk) => { body += chunk; });
-      req.on("end", async () => {
-        try {
-          const message = JSON.parse(body);
-          const response = await handleRpcRequest(message, context);
-          if (response) {
-            sseRes.write(`event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", ...response })}\n\n`);
-          }
-          res.writeHead(202);
-          res.end();
-        } catch (error) {
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: error.message || "Bad request" }));
-        }
-      });
-      return;
-    }
-
-    res.writeHead(404);
-    res.end();
-  });
-
-  server.listen(port, () => {
-    process.stderr.write(`${SERVER_NAME} v${SERVER_VERSION} HTTP/SSE server listening on port ${port}\n`);
-  });
-}
-
 if (require.main === module) {
   const arg = process.argv[2];
   const ctx = { configOptions: { cwd: process.cwd(), serverDir: __dirname } };
@@ -1641,8 +1541,9 @@ if (require.main === module) {
     runSetup().catch((err) => { process.stderr.write(`${err.message}\n`); process.exit(1); });
   } else if (arg === "--tools") {
     printTools();
-  } else if (arg === "--http" || process.env.PORT) {
-    startHttpServer(ctx);
+  } else if (arg && arg.startsWith("--")) {
+    process.stderr.write(`Unknown flag: ${arg}\nSupported flags: --setup, --tools\n`);
+    process.exit(1);
   } else {
     startServer(ctx);
   }
@@ -1654,7 +1555,7 @@ module.exports = {
   ToolInputError,
   callTool,
   tokenizeApp,
-  startHttpServer,
+  startServer,
   runSetup,
   canonicalizeToolName,
   checkCredits,
