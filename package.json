@@ -1,7 +1,7 @@
 {
   "name": "tokensfun-mcp",
   "version": "1.0.0",
-  "private": true,
+  "files": ["server.js", "README.md", "SKILL.md"],
   "description": "tokensfun mcp for Claude Code existing-app token deployment.",
   "bin": {
     "tokensfun-mcp": "./server.js"
