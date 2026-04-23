@@ -1,6 +1,6 @@
 {
   "name": "tokensfun-mcp",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "files": [
     "server.js",
     "README.md",
